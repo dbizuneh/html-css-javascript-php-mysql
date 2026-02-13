@@ -31,7 +31,7 @@
 <div class="container">
     <div class="card">
         <h1>Student Management System</h1>
-        <p class="muted">Add, list, and delete students. Data is saved in a JSON file.</p>
+        <p class="muted">Add, list, and delete students. Data is saved in a MySQL database.</p>
 
         <?php if (!empty($flash)): ?>
             <div class="alert <?= htmlspecialchars((string) $flash['type']) ?>">

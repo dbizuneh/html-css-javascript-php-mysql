@@ -4,79 +4,60 @@ declare(strict_types=1);
 
 namespace App;
 
+use PDO;
+
 final class StudentRepository
 {
-    public function __construct(private readonly string $storagePath)
+    public function __construct(private readonly PDO $pdo)
     {
-        $this->ensureStorageExists();
+        $this->ensureTableExists();
     }
 
     /** @return array<int, array{id:string,name:string,email:string,created_at:string}> */
     public function all(): array
     {
-        $content = file_get_contents($this->storagePath);
-        if ($content === false || trim($content) === '') {
-            return [];
-        }
+        $statement = $this->pdo->query(
+            'SELECT id, name, email, DATE_FORMAT(created_at, "%Y-%m-%d %H:%i:%s") AS created_at FROM students ORDER BY created_at DESC'
+        );
 
-        $data = json_decode($content, true);
-        if (!is_array($data)) {
-            return [];
-        }
+        /** @var array<int, array{id:string,name:string,email:string,created_at:string}> $rows */
+        $rows = $statement->fetchAll();
 
-        return array_values(array_filter($data, fn ($row) => is_array($row)));
+        return $rows;
     }
 
     public function add(string $name, string $email): void
     {
-        $students = $this->all();
+        $id = bin2hex(random_bytes(8));
 
-        $students[] = [
-            'id' => bin2hex(random_bytes(8)),
-            'name' => $name,
-            'email' => $email,
-            'created_at' => (new \DateTimeImmutable())->format(DATE_ATOM),
-        ];
+        $statement = $this->pdo->prepare(
+            'INSERT INTO students (id, name, email, created_at) VALUES (:id, :name, :email, NOW())'
+        );
 
-        $this->write($students);
+        $statement->execute([
+            ':id' => $id,
+            ':name' => $name,
+            ':email' => $email,
+        ]);
     }
 
     public function delete(string $id): bool
     {
-        $students = $this->all();
-        $filtered = array_values(array_filter(
-            $students,
-            static fn (array $student): bool => ($student['id'] ?? '') !== $id
-        ));
+        $statement = $this->pdo->prepare('DELETE FROM students WHERE id = :id');
+        $statement->execute([':id' => $id]);
 
-        if (count($filtered) === count($students)) {
-            return false;
-        }
-
-        $this->write($filtered);
-
-        return true;
+        return $statement->rowCount() > 0;
     }
 
-    private function ensureStorageExists(): void
+    private function ensureTableExists(): void
     {
-        $dir = dirname($this->storagePath);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0775, true);
-        }
-
-        if (!file_exists($this->storagePath)) {
-            file_put_contents($this->storagePath, json_encode([], JSON_PRETTY_PRINT));
-        }
-    }
-
-    /** @param array<int, array{id:string,name:string,email:string,created_at:string}> $students */
-    private function write(array $students): void
-    {
-        file_put_contents(
-            $this->storagePath,
-            json_encode($students, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            LOCK_EX
+        $this->pdo->exec(
+            'CREATE TABLE IF NOT EXISTS students (
+                id VARCHAR(16) PRIMARY KEY,
+                name VARCHAR(150) NOT NULL,
+                email VARCHAR(190) NOT NULL UNIQUE,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
         );
     }
 }
